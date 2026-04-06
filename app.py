@@ -1081,10 +1081,10 @@ def render_strategy_health_board(data) -> None:
                 st.caption(item["notes"])
 
 
-def render_latest_overview_run(data, run_id: str) -> tuple[bool, bool]:
+def render_latest_overview_run(data, run_id: str) -> bool:
     run, events, frames = iter_run_assets(data, run_id)
     if run is None or not frames:
-        return False, False
+        return False
 
     runtime_view = resolve_runtime_projection(run, events, frames)
     projected = runtime_view["projected"]
@@ -1107,6 +1107,11 @@ def render_latest_overview_run(data, run_id: str) -> tuple[bool, bool]:
     )
     strategy_map = {item.id: item for item in data.strategy_versions}
     strategy = strategy_map.get(run.strategy_version_id)
+    strategy_label = (
+        f"{strategy.name} {strategy.version}"
+        if strategy is not None
+        else run.strategy_version_id
+    )
 
     st.markdown("#### 最新任务状态")
     render_motion_scene(
@@ -1116,26 +1121,11 @@ def render_latest_overview_run(data, run_id: str) -> tuple[bool, bool]:
         scene_meta=scene_meta,
         height=430,
     )
-    st.progress(projected.progress, text=f"{projected.current_stage} | {run.result.scenario_label}")
-    if strategy is not None:
-        st.caption(f"策略：{strategy.name} {strategy.version}")
+    if projected.completed or is_paused:
+        _render_overview_live_status(run, events, frames, strategy_label)
     else:
-        st.caption(f"策略：{run.strategy_version_id}")
-
-    if is_paused:
-        st.warning("当前任务进度已暂停，总览与任务详情保持同步冻结。")
-
-    if projected.completed:
-        if run.result.failure_reason:
-            st.error(run.result.failure_reason)
-        else:
-            st.success("最近一次验证已完成，右侧保留最终结果。")
-        render_event_timeline(events, limit=4)
-    else:
-        render_event_timeline(projected.visible_events, limit=4)
-        if not is_paused:
-            st.caption("右侧已切换到最近一次验证的真实运行状态。")
-    return True, (not projected.completed and not is_paused)
+        _render_overview_live_status_fragment(run, events, frames, strategy_label)
+    return True
 
 
 def render_live_preview_panel(data) -> None:
@@ -1148,11 +1138,8 @@ def render_live_preview_panel(data) -> None:
             """,
             unsafe_allow_html=True,
         )
-        rendered, should_refresh = render_latest_overview_run(data, latest_run_id)
+        rendered = render_latest_overview_run(data, latest_run_id)
         if rendered:
-            if should_refresh:
-                time.sleep(1)
-                st.rerun()
             return
         st.session_state.latest_overview_run_id = None
 
@@ -1190,6 +1177,134 @@ def render_running_summary_card(run, projected, dynamic_profile: dict[str, Any])
     )
     if run.result.operator_note:
         st.info(f"备注：{run.result.operator_note}")
+
+
+def _render_overview_live_status(
+    run,
+    events: list[RunEvent],
+    frames: list[ReplayFrame],
+    strategy_label: str,
+    *,
+    rerun_on_completion: bool = False,
+) -> None:
+    runtime_view = resolve_runtime_projection(run, events, frames)
+    projected = runtime_view["projected"]
+    is_paused = runtime_view["paused"]
+
+    if rerun_on_completion and projected.completed:
+        st.rerun(scope="app")
+
+    st.progress(projected.progress, text=f"{projected.current_stage} | {run.result.scenario_label}")
+    st.caption(f"策略：{strategy_label}")
+
+    if is_paused:
+        st.warning("当前任务进度已暂停，总览与任务详情保持同步冻结。")
+
+    if projected.completed:
+        if run.result.failure_reason:
+            st.error(run.result.failure_reason)
+        else:
+            st.success("最近一次验证已完成，右侧保留最终结果。")
+        render_event_timeline(events, limit=4)
+        return
+
+    render_event_timeline(projected.visible_events, limit=4)
+    if not is_paused:
+        st.caption("右侧已切换到最近一次验证的真实运行状态。")
+
+
+@st.fragment(run_every="1s")
+def _render_overview_live_status_fragment(
+    run,
+    events: list[RunEvent],
+    frames: list[ReplayFrame],
+    strategy_label: str,
+) -> None:
+    _render_overview_live_status(
+        run,
+        events,
+        frames,
+        strategy_label,
+        rerun_on_completion=True,
+    )
+
+
+def _render_workspace_live_scene_status(
+    run,
+    events: list[RunEvent],
+    frames: list[ReplayFrame],
+    *,
+    rerun_on_completion: bool = False,
+) -> None:
+    runtime_view = resolve_runtime_projection(run, events, frames)
+    projected = runtime_view["projected"]
+    dynamic_profile = runtime_view["dynamic_profile"]
+    is_paused = runtime_view["paused"]
+
+    if projected.completed:
+        if rerun_on_completion:
+            st.rerun(scope="app")
+        return
+
+    st.progress(projected.progress, text=f"运行状态：{projected.current_stage}")
+    pause_col, status_col = st.columns([0.18, 0.82], gap="medium")
+    pause_label = "继续" if is_paused else "暂停"
+    if pause_col.button(pause_label, key=f"detail-pause-toggle-{run.id}", use_container_width=True):
+        st.session_state.page = "任务工作台"
+        st.session_state.selected_run_id = run.id
+        toggle_runtime_pause(run)
+        st.rerun(scope="app")
+    with status_col:
+        if is_paused:
+            st.warning("当前任务进度已暂停，总览与任务详情会同时冻结。")
+        else:
+            st.caption("可使用“暂停”真正冻结当前任务进度，便于讲解当前动作和时间线。")
+    render_running_summary_card(run, projected, dynamic_profile)
+    if not is_paused:
+        st.info("任务仍在运行，画面会持续播放，状态面板每秒同步一次。")
+
+
+@st.fragment(run_every="1s")
+def _render_workspace_live_scene_status_fragment(
+    run,
+    events: list[RunEvent],
+    frames: list[ReplayFrame],
+) -> None:
+    _render_workspace_live_scene_status(
+        run,
+        events,
+        frames,
+        rerun_on_completion=True,
+    )
+
+
+def _render_workspace_live_info(
+    run,
+    events: list[RunEvent],
+    frames: list[ReplayFrame],
+) -> None:
+    runtime_view = resolve_runtime_projection(run, events, frames)
+    projected = runtime_view["projected"]
+
+    if projected.completed:
+        return
+
+    st.markdown(status_badge(projected.run_record.status), unsafe_allow_html=True)
+    st.caption(f"当前阶段：{projected.current_stage}")
+    st.metric("进度", f"{projected.progress * 100:.0f}%")
+    st.metric("已用时", format_duration(projected.elapsed_ms))
+    st.metric("预计总时长", format_duration(run.duration_ms))
+    st.markdown("#### 执行时间线")
+    render_event_timeline(projected.visible_events, limit=6)
+
+
+@st.fragment(run_every="1s")
+def _render_workspace_live_info_fragment(
+    run,
+    events: list[RunEvent],
+    frames: list[ReplayFrame],
+) -> None:
+    _render_workspace_live_info(run, events, frames)
 
 
 def render_completed_summary_card(run) -> None:
@@ -1418,44 +1533,21 @@ def _render_workspace_live(run, events, frames, runtime_view) -> None:
         title="实时任务状态",
     )
     st.markdown("#### 实时任务状态")
-
-    @st.fragment
-    def _scene_fragment() -> None:
-        scene_col, info_col = st.columns([7, 3], gap="large")
-        with scene_col:
-            render_motion_scene(
-                payload, display_frame, "实时任务状态",
-                scene_meta=scene_meta, height=480,
-            )
-            st.progress(projected.progress, text=f"运行状态：{projected.current_stage}")
-            pause_col, status_col = st.columns([0.18, 0.82], gap="medium")
-            pause_label = "继续" if is_paused else "暂停"
-            if pause_col.button(pause_label, key=f"detail-pause-toggle-{run.id}", use_container_width=True):
-                st.session_state.page = "任务工作台"
-                st.session_state.selected_run_id = run.id
-                toggle_runtime_pause(run)
-                st.rerun()
-            with status_col:
-                if is_paused:
-                    st.warning("当前任务进度已暂停，总览与任务详情会同时冻结。")
-                else:
-                    st.caption("可使用\u201c暂停\u201d真正冻结当前任务进度，便于讲解当前动作和时间线。")
-            render_running_summary_card(run, projected, dynamic_profile)
-            if not is_paused:
-                st.info("任务仍在运行，页面会每秒自动刷新一次。")
-        with info_col:
-            st.markdown(status_badge(projected.run_record.status), unsafe_allow_html=True)
-            st.caption(f"当前阶段：{projected.current_stage}")
-            st.metric("进度", f"{projected.progress * 100:.0f}%")
-            st.metric("已用时", format_duration(projected.elapsed_ms))
-            st.metric("预计总时长", format_duration(run.duration_ms))
-            st.markdown("#### 执行时间线")
-            render_event_timeline(projected.visible_events, limit=6)
-
-    _scene_fragment()
-    if not is_paused:
-        time.sleep(1)
-        st.rerun()
+    scene_col, info_col = st.columns([7, 3], gap="large")
+    with scene_col:
+        render_motion_scene(
+            payload, display_frame, "实时任务状态",
+            scene_meta=scene_meta, height=480,
+        )
+        if is_paused:
+            _render_workspace_live_scene_status(run, events, frames)
+        else:
+            _render_workspace_live_scene_status_fragment(run, events, frames)
+    with info_col:
+        if is_paused:
+            _render_workspace_live_info(run, events, frames)
+        else:
+            _render_workspace_live_info_fragment(run, events, frames)
 
 
 def render_task_workspace(data) -> None:

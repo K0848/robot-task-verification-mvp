@@ -82,17 +82,18 @@ _SCENARIO_SPECS: dict[str, dict[str, Any]] = {
             (1.00, "任务完成", "success", "任务完成，生成结构化运行报告"),
         ],
         "frames": [
+            #    ratio, arm_x, arm_y, arm_z, gripper, obj_x, obj_y, held, placed, stage
             (0.00, 16, 86, 8, "open", 34, 58, False, False, "准备环境"),
             (0.10, 20, 80, 12, "open", 34, 58, False, False, "机械臂归位"),
             (0.24, 28, 64, 18, "open", 34, 58, False, False, "接近目标"),
             (0.38, 32, 58, 8, "open", 34, 58, False, False, "对准目标"),
             (0.44, 34, 58, 8, "closed", 34, 58, True, False, "执行抓取"),
-            (0.56, 42, 46, 18, "closed", 42, 46, True, False, "抬升目标"),
-            (0.66, 56, 42, 24, "closed", 56, 42, True, False, "转运中"),
-            (0.76, 68, 46, 24, "closed", 68, 46, True, False, "接近托盘"),
-            (0.84, 76, 58, 12, "open", 76, 58, False, True, "放置校验"),
-            (0.92, 72, 52, 18, "open", 76, 58, False, True, "回撤"),
-            (1.00, 24, 78, 10, "open", 76, 58, False, True, "任务完成"),
+            (0.56, 48, 52, 20, "closed", 48, 52, True, False, "抬升目标"),
+            (0.66, 64, 52, 26, "closed", 64, 52, True, False, "转运中"),
+            (0.76, 80, 56, 22, "closed", 80, 56, True, False, "接近托盘"),
+            (0.84, 88, 56, 12, "open", 88, 56, False, True, "放置校验"),
+            (0.92, 80, 52, 18, "open", 88, 56, False, True, "回撤"),
+            (1.00, 24, 78, 10, "open", 88, 56, False, True, "任务完成"),
         ],
     },
     "grasp_slip": {
@@ -142,11 +143,11 @@ _SCENARIO_SPECS: dict[str, dict[str, Any]] = {
             (0.12, 22, 78, 12, "open", 34, 58, False, False, "机械臂归位"),
             (0.24, 28, 64, 18, "open", 34, 58, False, False, "接近目标"),
             (0.40, 34, 58, 8, "closed", 34, 58, True, False, "执行抓取"),
-            (0.54, 48, 46, 20, "closed", 48, 46, True, False, "抬升目标"),
-            (0.64, 62, 42, 24, "closed", 62, 42, True, False, "转运中"),
-            (0.78, 74, 48, 22, "closed", 74, 48, True, False, "准备放置"),
-            (0.84, 82, 60, 10, "open", 84, 62, False, False, "放置校验"),
-            (1.00, 24, 78, 10, "open", 84, 62, False, False, "任务失败"),
+            (0.54, 48, 52, 20, "closed", 48, 52, True, False, "抬升目标"),
+            (0.64, 64, 52, 26, "closed", 64, 52, True, False, "转运中"),
+            (0.78, 80, 56, 22, "closed", 80, 56, True, False, "准备放置"),
+            (0.84, 82, 60, 10, "open", 78, 62, False, False, "放置校验"),
+            (1.00, 24, 78, 10, "open", 78, 62, False, False, "任务失败"),
         ],
     },
 }
@@ -741,6 +742,19 @@ def build_events(
     return events
 
 
+# Pose coordinates for each tray slot, reverse-computed from Three.js:
+#   slotPosition: Tray-01=(3.1, 0.62, -1.4), Tray-02=(3.1, 0.62, -0.5), Tray-03=(3.1, 0.62, 0.4)
+#   toWorldPosition: x_world=(pose_x-48)/13, z_world=(pose_y-62)/13
+#   Reverse: pose_x = x_world*13+48, pose_y = z_world*13+62
+_SLOT_POSE: dict[str, tuple[int, int]] = {
+    "Tray-01": (88, 44),   # (3.1*13+48, -1.4*13+62) = (88.3, 43.8) → round
+    "Tray-02": (88, 56),   # (3.1*13+48, -0.5*13+62) = (88.3, 55.5) → round
+    "Tray-03": (88, 67),   # (3.1*13+48,  0.4*13+62) = (88.3, 67.2) → round
+}
+# Frame specs are authored against this reference tray:
+_REF_SLOT = "Tray-02"
+
+
 def build_frames(
     run_id: str,
     started_at: datetime,
@@ -749,10 +763,28 @@ def build_frames(
     target_slot: str,
     object_label: str,
 ) -> list[ReplayFrame]:
+    # Compute coordinate offset between the reference tray and the actual target tray.
+    ref_x, ref_y = _SLOT_POSE[_REF_SLOT]
+    slot_x, slot_y = _SLOT_POSE.get(target_slot, _SLOT_POSE[_REF_SLOT])
+    dx, dy = slot_x - ref_x, slot_y - ref_y
+
     frames: list[ReplayFrame] = []
-    for ratio, arm_x, arm_y, arm_z, gripper, obj_x, obj_y, held, placed, stage in frame_specs:
+    # Find the first frame where 'held' becomes True – all frames at and after that
+    # point are in the arm-to-tray trajectory and need the tray offset applied.
+    grab_index = next(
+        (i for i, spec in enumerate(frame_specs) if spec[7]),  # spec[7] = held
+        len(frame_specs),
+    )
+    for i, (ratio, arm_x, arm_y, arm_z, gripper, obj_x, obj_y, held, placed, stage) in enumerate(frame_specs):
         offset_ms = min(int(duration_ms * ratio), duration_ms)
         timestamp = started_at + timedelta(milliseconds=offset_ms)
+        # Apply tray offset to frames from grab onwards (arm follows tray trajectory)
+        if i >= grab_index:
+            arm_x += dx
+            arm_y += dy
+            obj_x += dx
+            obj_y += dy
+        dropoff_x, dropoff_y = slot_x, slot_y
         frames.append(
             ReplayFrame(
                 run_id=run_id,
@@ -766,8 +798,8 @@ def build_frames(
                     "object_y": obj_y,
                     "pickup_x": 34,
                     "pickup_y": 58,
-                    "dropoff_x": 76,
-                    "dropoff_y": 58,
+                    "dropoff_x": dropoff_x,
+                    "dropoff_y": dropoff_y,
                     "held": held,
                     "placed": placed,
                 },
