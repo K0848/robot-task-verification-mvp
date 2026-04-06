@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.tmp-tests/
+
+# Backup files
+*.bak.*
+
+# Runtime data (auto-generated on first run)
+data/store.json
+
+# Node / Frontend
+web/robot_renderer/node_modules/
+web/robot_renderer/.npm-cache/
+web/robot_renderer/dist/
+
+# IDE & editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Gemini agent workspace
+.agents/
+.agent/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Personal working notes (not part of the product)
+修改内容.md
+实施目录.txt
