@@ -30,7 +30,7 @@
 
 ## 🎥 演示视频
 
-[▶ 点击观看 Bilibili 演示视频](https://www.bilibili.com/video/BV12BSfBNEz6/)
+[▶ 点击观看 Bilibili 演示视频](https://www.bilibili.com/video/BV1BdSfBXESe/)
 
 > 视频展示了完整的 Pick & Place 任务验证流程，包括实时监控、失败复盘、版本对比和基准评测功能。
 
