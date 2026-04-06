@@ -73,7 +73,7 @@
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/<your-username>/robot-task-verification-mvp.git
+git clone https://github.com/K0848/robot-task-verification-mvp.git
 cd robot-task-verification-mvp
 
 # 2. 安装 Python 依赖
