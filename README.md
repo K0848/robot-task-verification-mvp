@@ -72,7 +72,6 @@
 ├── data/v2_runs/                  # V2 独立运行产物（不混入 store.json）
 │
 └── md/                            # 项目文档
-    └── 项目结构总览.md
 ```
 
 ---
@@ -124,7 +123,7 @@ python -m robot_mvp.v2_cli show <run-id>
 python -m robot_mvp.v2_cli overview
 ```
 
-`list`为轻量记录查询，`show`核对完整证据；运行中、执行异常和损坏记录不会被当作成功运行。`overview`是当前模型有效运行的描述性汇总，不是benchmark成功率。相同参数的比较会标记为重复性检查；比较拒绝的CLI退出码为2。字段和错误处理见 [接口与数据契约](docs/接口与数据契约.md)。
+`list`为轻量记录查询，`show`核对完整证据；运行中、执行异常和损坏记录不会被当作成功运行。`overview`是当前模型有效运行的描述性汇总，不是benchmark成功率。相同参数的比较会标记为重复性检查；比较拒绝的CLI退出码为2。
 
 历史平面任务入口（不指定 `--model` 保持兼容）：
 
@@ -185,7 +184,7 @@ cd web/robot_renderer && npm test
 
 ## 🏛️ 技术架构
 
-以下为 V1；V2 的独立 worker、固定模型和姿态数据流见 [系统架构](docs/系统架构.md)。
+以下为 V1；V2 在独立 worker 中运行固定 Panda 模型，并将结果写入独立 artifact 目录。
 
 ```
 Streamlit 页面  →  JsonStore  →  simulator  →  dataclass 模型
@@ -208,10 +207,6 @@ Streamlit 页面  →  JsonStore  →  simulator  →  dataclass 模型
 
 | 文档 | 说明 |
 |------|------|
-| [md/项目结构总览.md](md/项目结构总览.md) | 面向开发者的代码级架构总览 |
-| [docs/README.md](docs/README.md) | 用户和开发者文档入口 |
-| [docs/系统架构.md](docs/系统架构.md) | 模块边界、数据流、状态流和运行边界 |
-| [docs/接口与数据契约.md](docs/接口与数据契约.md) | JsonStore、JSON 持久化和 RendererPayload 契约 |
 
 ---
 
