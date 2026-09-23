@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 import html
+import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -39,10 +41,14 @@ from robot_mvp.simulator import (
     to_iso,
 )
 from robot_mvp.storage import JsonStore
+from robot_mvp.v2_service import V2RunService
+from robot_mvp.v2_view import render_evidence
+from robot_mvp.workspace_ui import inject_workspace_styles, render_workspace, render_history, render_comparison
 
 ROOT = Path(__file__).resolve().parent
 STORE = JsonStore(ROOT / "data" / "store.json")
-PAGES = ["总览", "任务工作台", "版本对比", "基准评测"]
+V2_SERVICE = V2RunService(ROOT / "data" / "v2_runs")
+PAGES = ["总览", "任务工作台", "版本对比", "基准评测", "V2 物理仿真"]
 ROLE_HINTS = {
     "算法工程师": [
         "关注策略版本的成功率、关键日志和失败原因。",
@@ -71,6 +77,13 @@ def inject_styles() -> None:
         """
         <style>
         .stApp { background: #0a0f1a; color: #e0e7ff; }
+        [data-testid="stMetricValue"], [data-testid="stMetricLabel"],
+        [data-testid="stWidgetLabel"], [data-testid="stExpander"] summary,
+        [data-testid="stMarkdownContainer"] { color: #e0e7ff; }
+        [data-testid="stHeader"] { background: #0a0f1a; }
+        .stButton > button, .stDownloadButton > button { background: #22344d; color: #f3f6fc; border: 1px solid #8194af; }
+        .stButton > button:disabled { background: #182538; color: #a5b2c7; }
+        [data-baseweb="select"] > div { background: #22344d; color: #f3f6fc; }
         .main, .block-container { background: transparent; }
         .block-container { padding-top: 2.4rem; padding-bottom: 2rem; }
         [data-testid="stSidebar"] { background: rgba(8, 13, 24, 0.96); }
@@ -1789,6 +1802,8 @@ def render_benchmark_lab(data) -> None:
                     st.session_state.selected_run_id = item["run_id"]
                     st.session_state.page = "任务工作台"
                     st.rerun()
+
+
                 if action_cols[1].button(
                     "回放",
                     key=f"benchmark-replay-{row_index}-{item['run_id']}",
@@ -1799,40 +1814,80 @@ def render_benchmark_lab(data) -> None:
                     st.rerun()
 
 
-def main() -> None:
-    st.set_page_config(page_title="仿真机械臂任务验证平台", page_icon="🦾", layout="wide", initial_sidebar_state="expanded")
-    inject_styles()
-    current_time = now_local()
+def render_v2_simulation() -> None:
+    render_workspace(V2_SERVICE)
+
+
+def render_v2_comparison(model_id: str) -> None:
+    render_comparison(V2_SERVICE, model_id)
+
+
+def _leave_legacy() -> None:
+    st.session_state['rf-legacy'] = False
+
+
+def render_legacy_area() -> None:
+    st.warning("历史区域：V1 为预设演示，旧平面为简化物理测试；均不纳入 Panda 运行统计。")
     data = STORE.load()
-    ensure_state(
-        [run.id for run in ad_hoc_run_records(data)],
-        [batch.id for batch in benchmark_batches_sorted(data)],
-    )
-    runtime_overrides = build_runtime_sync_overrides(data, current=current_time)
-    if sync_run_statuses(data, current=current_time, runtime_overrides=runtime_overrides):
+    ensure_state([run.id for run in ad_hoc_run_records(data)],
+                 [batch.id for batch in benchmark_batches_sorted(data)])
+    current_time = now_local()
+    if sync_run_statuses(data, current=current_time, runtime_overrides=build_runtime_sync_overrides(data, current=current_time)):
         STORE.save(data)
-    with st.sidebar:
-        st.markdown("### 导航")
-        st.session_state.page = st.radio("页面", PAGES, index=PAGES.index(st.session_state.page))
-        st.session_state.role = st.selectbox("当前角色视角", list(ROLE_HINTS.keys()), index=list(ROLE_HINTS.keys()).index(st.session_state.role))
-        render_role_brief(st.session_state.role)
-        st.session_state.renderer_mode = st.selectbox(
-            "动作渲染器",
-            ["threejs", "svg"],
-            index=["threejs", "svg"].index(st.session_state.renderer_mode),
-            format_func=lambda item: "Three.js 2.5D" if item == "threejs" else "SVG 回退",
-        )
-        if st.session_state.renderer_mode == "threejs" and not bundle_available():
-            st.warning("Three.js bundle 不存在，当前已自动回退到 SVG。先执行 web/robot_renderer 的构建。")
-        st.caption("默认数据由本地 JSON 自动初始化，适合单机录屏演示。")
-    if st.session_state.page == "总览":
-        render_overview(data)
-    elif st.session_state.page == "任务工作台":
-        render_task_workspace(data)
-    elif st.session_state.page == "版本对比":
-        render_compare(data)
+    page = st.session_state.page if st.session_state.page in PAGES else PAGES[0]
+    selected = st.radio("历史页面", PAGES, index=PAGES.index(page), horizontal=True,
+                        format_func=lambda name: "旧平面物理任务" if name=="V2 物理仿真" else name,
+                        key=f"rf-legacy-nav-{page}")
+    if selected != page:
+        st.session_state.page = selected
+        st.rerun()
+    if page == "V2 物理仿真":
+        render_workspace(V2_SERVICE, model_id="minimal_planar_pick_place")
+        return
+    with st.expander("历史演示显示设置"):
+        st.session_state.renderer_mode = st.selectbox("动作渲染器", ["threejs","svg"],
+            index=0 if st.session_state.renderer_mode=="threejs" else 1,
+            format_func=lambda value:"Three.js 示意" if value=="threejs" else "SVG 示意")
+    if page == "总览": render_overview(data)
+    elif page == "任务工作台": render_task_workspace(data)
+    elif page == "版本对比": render_compare(data)
+    else: render_benchmark_lab(data)
+
+
+def main() -> None:
+    st.set_page_config(page_title="RoboForge · 任务验证", page_icon="🦾", layout="wide", initial_sidebar_state="collapsed")
+    inject_styles()
+    inject_workspace_styles()
+    if "rf-page" not in st.session_state:
+        st.session_state["rf-page"] = "验证工作台"
+    if "rf-legacy" not in st.session_state:
+        st.session_state["rf-legacy"] = False
+    brand, help_area = st.columns([4,1], vertical_alignment="center")
+    with brand:
+        st.markdown('<div class="rf-brand"><b>RoboForge</b> ROBOT TASK VERIFICATION</div>',unsafe_allow_html=True)
+    with help_area:
+        if st.session_state["rf-legacy"]:
+            if st.button("返回主工作区",width="stretch"):
+                _leave_legacy()
+                st.rerun()
+        else:
+            with st.popover("帮助与历史",width="stretch"):
+                st.markdown("**使用流程**\n\n选择参数方案 → 开始验证 → 回放与证据 → 比较运行。")
+                st.caption("本地单用户物理仿真，使用脚本控制；不是实时遥操作、视觉模型训练或真机能力证明。")
+                st.divider()
+                st.caption("V1演示和旧平面模型只用于历史说明，不进入Panda统计。")
+                if st.button("打开历史演示",key="rf-open-legacy"):
+                    st.session_state["rf-legacy"] = True
+                    st.rerun()
+    with st.container(key="rf-nav"):
+        st.radio("工作区",["验证工作台","运行记录"],horizontal=True,key="rf-page",
+                 label_visibility="collapsed",on_change=_leave_legacy)
+    if st.session_state["rf-legacy"]:
+        render_legacy_area()
+    elif st.session_state["rf-page"] == "运行记录":
+        render_history(V2_SERVICE)
     else:
-        render_benchmark_lab(data)
+        render_workspace(V2_SERVICE)
 
 
 if __name__ == "__main__":

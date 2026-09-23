@@ -1,0 +1,22 @@
+{
+  "checks": [
+    {
+      "case": "baseline_play_pause_seek_switch",
+      "run_id": "v2-5848844d46",
+      "status": "pass"
+    },
+    {
+      "case": "offset_failure_event_and_restart",
+      "status": "pass"
+    },
+    {
+      "case": "v1_overview_smoke",
+      "status": "pass"
+    },
+    {
+      "case": "webgl_unavailable_svg_playback",
+      "status": "pass"
+    }
+  ],
+  "pageerrors": []
+}

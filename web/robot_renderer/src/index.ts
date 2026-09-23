@@ -1,4 +1,5 @@
 ﻿import * as THREE from 'three';
+import { renderPhysical } from './physical';
 import {
   type FramePayload,
   type RendererPayload,
@@ -114,6 +115,16 @@ function toWorldPosition(pose: { x: number; y: number; z: number }): Vec3 {
   };
 }
 
+function toMujocoWorldPosition(pose: { x: number; y: number; z: number }): Vec3 {
+  // MuJoCo uses meters around the origin; the existing scene uses a larger
+  // presentation space. This is a scale/axis conversion only, not a new path.
+  return {
+    x: pose.x * 6,
+    y: 0.92 + pose.z * 6,
+    z: pose.y * 6
+  };
+}
+
 function withLiftArc(position: Vec3, stage: string, progress: number): Vec3 {
   const boosted = /接近|转运|抬升|回撤/.test(stage);
   const arc = boosted ? Math.sin(progress * Math.PI) * 0.42 : 0;
@@ -140,7 +151,8 @@ function sampledState(payload: RendererPayload, elapsedSinceMount: number): Samp
     return null;
   }
   const profile = normalizeDynamicProfile(payload.dynamic_profile);
-  const lagMs = frame.target_state.held ? Math.round(110 / profile.pace_multiplier) : 0;
+  const isMujocoTrajectory = payload.coordinate_system === 'mujoco-world';
+  const lagMs = !isMujocoTrajectory && frame.target_state.held ? Math.round(110 / profile.pace_multiplier) : 0;
   const objectFrame = sampleFrame(payload.frames, Math.max(0, timeMs - lagMs)) ?? frame;
   return {
     timeMs,
@@ -370,8 +382,11 @@ class SceneController {
   private applyState(state: SampledState, elapsedSinceMount: number): void {
     const profile = normalizeDynamicProfile(this.payload.dynamic_profile);
     const baseTop = new THREE.Vector3(-3.55, 1.18, 1.85);
-    const currentArm = withLiftArc(toWorldPosition(state.frame.arm_pose), state.stage, state.progress);
-    const shake = failureShake(state, elapsedSinceMount);
+    const isMujocoTrajectory = this.payload.coordinate_system === 'mujoco-world';
+    const currentArm = isMujocoTrajectory
+      ? toMujocoWorldPosition(state.frame.arm_pose)
+      : withLiftArc(toWorldPosition(state.frame.arm_pose), state.stage, state.progress);
+    const shake = isMujocoTrajectory ? { x: 0, y: 0, z: 0 } : failureShake(state, elapsedSinceMount);
     const endEffector = new THREE.Vector3(currentArm.x + shake.x, currentArm.y + shake.y, currentArm.z + shake.z);
     const elbow = new THREE.Vector3(
       THREE.MathUtils.lerp(baseTop.x, endEffector.x, 0.45),
@@ -389,9 +404,14 @@ class SceneController {
     this.leftFingerMesh.position.set(endEffector.x - fingerGap, endEffector.y - 0.14, endEffector.z);
     this.rightFingerMesh.position.set(endEffector.x + fingerGap, endEffector.y - 0.14, endEffector.z);
 
-    const sourcePosition = binPosition(this.payload.scene.source_bin);
+    const pickup = state.frame.target_state;
+    const sourcePosition = isMujocoTrajectory
+      ? toMujocoWorldPosition({ x: pickup.pickup_x, y: pickup.pickup_y, z: pickup.pickup_z ?? 0 })
+      : binPosition(this.payload.scene.source_bin);
     this.sourceBinMesh.position.set(sourcePosition.x, sourcePosition.y, sourcePosition.z);
-    const trayPosition = slotPosition(this.payload.scene.target_slot);
+    const trayPosition = isMujocoTrajectory
+      ? toMujocoWorldPosition({ x: pickup.dropoff_x, y: pickup.dropoff_y, z: pickup.dropoff_z ?? 0 })
+      : slotPosition(this.payload.scene.target_slot);
     this.trayMesh.position.set(trayPosition.x, trayPosition.y, trayPosition.z);
 
     const desiredKind = resolveObjectKind(this.payload.scene.object_label);
@@ -410,10 +430,17 @@ class SceneController {
     }
 
     const objectPoseSource = state.objectFrame.target_state.held ? state.frame.target_state : state.objectFrame.target_state;
-    const objectWorld = state.objectFrame.target_state.held
-      ? new THREE.Vector3(endEffector.x, endEffector.y - 0.28, endEffector.z)
-      : new THREE.Vector3(...Object.values(toWorldPosition({ x: objectPoseSource.object_x, y: objectPoseSource.object_y, z: objectPoseSource.placed ? 4 : 2 })) as [number, number, number]);
-    if (state.objectFrame.target_state.placed) {
+    const objectPose = toMujocoWorldPosition({
+      x: objectPoseSource.object_x,
+      y: objectPoseSource.object_y,
+      z: objectPoseSource.object_z ?? 0
+    });
+    const objectWorld = isMujocoTrajectory
+      ? new THREE.Vector3(objectPose.x, objectPose.y, objectPose.z)
+      : state.objectFrame.target_state.held
+        ? new THREE.Vector3(endEffector.x, endEffector.y - 0.28, endEffector.z)
+        : new THREE.Vector3(...Object.values(toWorldPosition({ x: objectPoseSource.object_x, y: objectPoseSource.object_y, z: objectPoseSource.placed ? 4 : 2 })) as [number, number, number]);
+    if (!isMujocoTrajectory && state.objectFrame.target_state.placed) {
       const settle = Math.exp(-state.progress * 6) * Math.sin(state.timeMs / 90) * 0.04;
       objectWorld.y = 1.02 + settle;
     }
@@ -472,6 +499,7 @@ declare global {
   interface Window {
     RobotRenderer?: {
       render: (root: HTMLElement, payload: RendererPayload) => void;
+      renderPhysical: (root: HTMLElement, payload: RendererPayload) => void;
     };
   }
 }
@@ -484,5 +512,5 @@ function render(root: HTMLElement, payload: RendererPayload): void {
   (root as HTMLElement & { __controller?: SceneController }).__controller = controller;
 }
 
-window.RobotRenderer = { render };
+window.RobotRenderer = { render, renderPhysical };
 

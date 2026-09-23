@@ -1,0 +1,6 @@
+{
+  "case": "comparison_page_after_integrity_fix",
+  "status": "pass",
+  "selections": "用于比较的运行\n\nv2-34fb0b283c · baseline · 成功\nv2-1b25b63b12 · baseline · 成功",
+  "pageerrors": []
+}

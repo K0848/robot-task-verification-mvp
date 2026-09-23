@@ -20,6 +20,9 @@ export type TargetState = {
   pickup_y: number;
   dropoff_x: number;
   dropoff_y: number;
+  object_z?: number;
+  pickup_z?: number;
+  dropoff_z?: number;
   held: boolean;
   placed: boolean;
 };
@@ -30,6 +33,49 @@ export type FramePayload = {
   arm_pose: ArmPose;
   gripper_state: string;
   target_state: TargetState;
+};
+
+export type RobotVec3 = [number, number, number];
+export type RobotQuaternionWxyz = [number, number, number, number];
+
+export type RobotMeshPayload = {
+  id: number;
+  vertices_b64: string;
+  indices_b64: string;
+};
+
+export type RobotGeomPayload = {
+  id: number;
+  name?: string;
+  type: 'mesh' | 'box' | 'plane';
+  mesh_id: number | null;
+  size: RobotVec3;
+  rgba: [number, number, number, number];
+};
+
+export type RobotScenePayload = {
+  schema: 'panda-scene-1' | string;
+  model_hash?: string;
+  meshes: RobotMeshPayload[];
+  geoms: RobotGeomPayload[];
+};
+
+export type RobotGeomPose = {
+  position: RobotVec3;
+  /** 后端将 MuJoCo 四元数序列化为 wxyz。 */
+  quaternion: RobotQuaternionWxyz;
+};
+
+export type RobotFramePayload = {
+  run_id?: string;
+  sim_time_ms: number;
+  stage: string;
+  geom_poses: RobotGeomPose[];
+  tool_position?: RobotVec3;
+  gripper_width_m?: number;
+  contacts?: Record<string, number | boolean>;
+  object_position?: RobotVec3;
+  target_position?: RobotVec3;
 };
 
 export type EventPayload = {
@@ -47,6 +93,7 @@ export type RendererPayload = {
   success: boolean;
   scenario_label: string;
   resolved_scenario: string;
+  coordinate_system?: 'legacy-scene' | 'mujoco-world';
   progress: number;
   current_stage: string;
   highlight_mode: string;
@@ -65,6 +112,11 @@ export type RendererPayload = {
   };
   frames: FramePayload[];
   events: EventPayload[];
+  model_id?: string;
+  run_id?: string;
+  /** 仅完整 Panda 回放提供；legacy payload 不包含这些字段。 */
+  robot_scene?: RobotScenePayload;
+  robot_frames?: RobotFramePayload[];
 };
 
 const DEFAULT_PROFILE: DynamicProfile = {
@@ -213,6 +265,9 @@ export function sampleFrame(frames: FramePayload[], timeMs: number): FramePayloa
       pickup_y: blendNumber(left.target_state.pickup_y, right.target_state.pickup_y, eased),
       dropoff_x: blendNumber(left.target_state.dropoff_x, right.target_state.dropoff_x, eased),
       dropoff_y: blendNumber(left.target_state.dropoff_y, right.target_state.dropoff_y, eased),
+      object_z: blendNumber(left.target_state.object_z ?? 0, right.target_state.object_z ?? 0, eased),
+      pickup_z: blendNumber(left.target_state.pickup_z ?? 0, right.target_state.pickup_z ?? 0, eased),
+      dropoff_z: blendNumber(left.target_state.dropoff_z ?? 0, right.target_state.dropoff_z ?? 0, eased),
       held: eased >= 0.5 ? right.target_state.held : left.target_state.held,
       placed: eased >= 0.5 ? right.target_state.placed : left.target_state.placed
     }

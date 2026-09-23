@@ -1,0 +1,2 @@
+# 上游模型逐文件校验字节哈希，禁止 Git 自动转换行尾。
+assets/robots/panda/** -text

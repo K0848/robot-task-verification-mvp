@@ -1,0 +1,53 @@
+{
+  "checks": [
+    {
+      "case": "actual_mesh_poses",
+      "run_id": "v2-4bcf681e5e",
+      "status": "pass",
+      "max_position_error_m": 1.8054062578428103e-16,
+      "max_rotation_error_rad": 8.429369702178808e-08
+    },
+    {
+      "case": "playback_and_views",
+      "status": "pass",
+      "raf_interval_median_ms": 33.200000000004366,
+      "raf_interval_p95_ms": 33.400000000001455
+    },
+    {
+      "case": "offset_failure_and_events",
+      "run_id": "v2-7dc5763912",
+      "status": "pass"
+    },
+    {
+      "case": "page_comparison_report",
+      "status": "pass"
+    },
+    {
+      "case": "page_crash",
+      "status": "pass",
+      "message": "执行异常：worker_exception · injected Panda worker crash"
+    },
+    {
+      "case": "page_timeout",
+      "status": "pass",
+      "message": "执行异常：wall_timeout · worker exceeded wall_timeout_s=0.5"
+    },
+    {
+      "case": "restart_after_fault",
+      "status": "pass",
+      "run_id": "v2-2daf3b801d"
+    },
+    {
+      "case": "panda_webgl_fallback",
+      "status": "pass"
+    }
+  ],
+  "pageerrors": [],
+  "browser_memory": {
+    "initial_rss_sum": 427094016,
+    "loaded_rss_sum": 866091008,
+    "increment_bytes": 438996992,
+    "scope": "sum of dedicated Chromium process RSS; shared pages may be counted multiple times"
+  },
+  "browser_processes_reaped": true
+}

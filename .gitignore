@@ -9,6 +9,7 @@ __pycache__/
 
 # Runtime data (auto-generated on first run)
 data/store.json
+data/v2_runs/
 
 # Node / Frontend
 web/robot_renderer/node_modules/
