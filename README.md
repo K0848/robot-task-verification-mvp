@@ -42,7 +42,6 @@
 ```text
 .
 ├── app.py                         # Streamlit 主应用入口
-├── PRD.md                         # 产品需求文档
 ├── requirements.txt               # Python 依赖
 ├── start.bat                      # Windows 一键启动
 │
@@ -125,7 +124,7 @@ python -m robot_mvp.v2_cli show <run-id>
 python -m robot_mvp.v2_cli overview
 ```
 
-`list`为轻量记录查询，`show`核对完整证据；运行中、执行异常和损坏记录不会被当作成功运行。`overview`是当前模型有效运行的描述性汇总，不是benchmark成功率。相同参数的比较会标记为重复性检查；比较拒绝的CLI退出码为2。接口细则见 [业务整理](docs/V2业务逻辑整理.md)。
+`list`为轻量记录查询，`show`核对完整证据；运行中、执行异常和损坏记录不会被当作成功运行。`overview`是当前模型有效运行的描述性汇总，不是benchmark成功率。相同参数的比较会标记为重复性检查；比较拒绝的CLI退出码为2。字段和错误处理见 [接口与数据契约](docs/接口与数据契约.md)。
 
 历史平面任务入口（不指定 `--model` 保持兼容）：
 
@@ -135,7 +134,7 @@ python -m robot_mvp.v2_cli run --artifacts data/v2_runs --strategy offset-grasp 
 python -m robot_mvp.v2_cli compare data/v2_runs/<run-a> data/v2_runs/<run-b>
 ```
 
-V2 使用原生 MuJoCo，worker 在独立进程运行，结果写入独立 artifact 目录。Panda 路径使用双指接触与摩擦搬运方块，旧平面路径仍明确标记为位置示意。前端只回放后端记录，不实时控制机器人。它用于证明执行接入、数据组织、受控比较和失败解释能力，不代表真机精度、视觉感知或 sim-to-real 结果；当前验收状态见 [Panda 实施门禁](docs/Panda实施与门禁.md)。
+V2 使用原生 MuJoCo，worker 在独立进程运行，结果写入独立 artifact 目录。Panda 路径使用双指接触与摩擦搬运方块，旧平面路径仍明确标记为位置示意。前端只回放后端记录，不实时控制机器人。它用于演示执行接入、数据组织、受控比较和失败解释能力，不代表真机精度、视觉感知或 sim-to-real 结果。
 
 > 💡 首次运行会自动初始化 `data/store.json`，包含 10 条示例运行记录、3 个策略版本和 2 个评测套件。
 
@@ -209,13 +208,10 @@ Streamlit 页面  →  JsonStore  →  simulator  →  dataclass 模型
 
 | 文档 | 说明 |
 |------|------|
-| [PRD.md](PRD.md) | 产品需求文档（问题定义 · 信息架构 · 数据模型 · 渲染管线 · 测试策略） |
 | [md/项目结构总览.md](md/项目结构总览.md) | 面向开发者的代码级架构总览 |
-| [docs/README.md](docs/README.md) | 产品、架构、接口契约和迭代文档入口 |
+| [docs/README.md](docs/README.md) | 用户和开发者文档入口 |
 | [docs/系统架构.md](docs/系统架构.md) | 模块边界、数据流、状态流和运行边界 |
 | [docs/接口与数据契约.md](docs/接口与数据契约.md) | JsonStore、JSON 持久化和 RendererPayload 契约 |
-| [docs/V2实施与验收.md](docs/V2实施与验收.md) | V2 运行命令、TC-01～TC-05、限制与未验证范围 |
-| [docs/Panda实施与门禁.md](docs/Panda实施与门禁.md) | Panda 增量契约、运行入口、Q1～Q4 状态和证据 |
 
 ---
 
